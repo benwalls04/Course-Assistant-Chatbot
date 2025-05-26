@@ -30,7 +30,15 @@ def get_text_chunks(raw_text):
   chunks = text_splitter.split_text(raw_text)
   return chunks
 
-def get_conversation_chain(vectorstore):
+
+def get_conversation_chain(collection_name):
+
+  vectorstore = Chroma(
+    collection_name=collection_name,
+    embedding_function=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2"),
+    persist_directory="chroma_db"
+  )
+
   llm = ChatOpenAI(
     temperature=0.5,
     model_name="gpt-3.5-turbo"  
@@ -55,9 +63,7 @@ def handle_userinput(user_question):
     else: 
       st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
 
-def get_collection(client, user_id):
-  collection_name = f"user_{user_id}_collection"
-
+def get_collection(client, collection_name):
   try:
     collection = client.get_collection(name=collection_name)
   except Exception as e:
@@ -69,7 +75,8 @@ def main():
   load_dotenv()
   client = chromadb.Client()
   user_id = "user_1"
-  collection = get_collection(client, user_id)
+  collection_name = f"user_{user_id}_collection"
+  collection = get_collection(client, collection_name)
 
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
@@ -97,16 +104,20 @@ def main():
         # get the text chunks 
         text_chunks = get_text_chunks(raw_text)
 
-        # add to vector db 
+        # create vector store 
+        embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        embeddings = embedding_model.embed_documents(text_chunks)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         collection.add(
           documents=text_chunks,
-          ids=[f"{user_id}_{timestamp}_doc{i}" for i in range(len(text_chunks))],
+          embeddings=embeddings,
+          ids=[f"{timestamp}_chunk{i}" for i in range(len(text_chunks))],
+          metadatas=[{"user_id": user_id, "course_name": "Course 1"}] * len(text_chunks)
         )
-        
 
         # create conversation chain
-        st.session_state.conversation = get_conversation_chain(vectorstore)
+        st.session_state.conversation = get_conversation_chain(collection_name)
 
 if __name__ == '__main__':
   main()
