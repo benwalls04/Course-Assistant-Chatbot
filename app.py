@@ -73,7 +73,7 @@ def get_collection(client, collection_name):
 
 def main():
   load_dotenv()
-  client = chromadb.Client()
+  client = chromadb.PersistentClient(path="chroma_db")
   user_id = "user_1"
   collection_name = f"user_{user_id}_collection"
   collection = get_collection(client, collection_name)
@@ -83,18 +83,34 @@ def main():
 
   if "conversation" not in st.session_state:
     st.session_state.conversation = None
-
   if "chat_history" not in st.session_state:
     st.session_state.chat_history = None
+  if "processed" not in st.session_state:
+    st.session_state.processed = False
 
   st.header("Select course, download materials, ask questions")
-  user_question = st.text_input("Ask a question about your documents:")
-
-  if user_question:
-    handle_userinput(user_question)
 
   with st.sidebar:
     st.subheader("Your documents")
+    
+    # Get existing documents from the collection
+    existing_docs = collection.get()
+    if existing_docs and existing_docs['metadatas']:
+      st.write("Previously uploaded documents:")
+      # Get unique file names from metadata
+      file_names = set()
+      for metadata in existing_docs['metadatas']:
+        if 'file_name' in metadata:
+          file_names.add(metadata['file_name'])
+      
+      for i, file_name in enumerate(sorted(file_names)):
+        st.write(f"{i+1}. {file_name}")
+      
+      # If there are existing documents, set processed to True and create conversation chain
+      st.session_state.processed = True
+      if not st.session_state.conversation:
+        st.session_state.conversation = get_conversation_chain(collection_name)
+    
     docs = st.file_uploader("Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
     if st.button("Process"):
       with st.spinner("Processing"): 
@@ -109,15 +125,36 @@ def main():
         embeddings = embedding_model.embed_documents(text_chunks)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Create metadata with file names
+        metadatas = []
+        for doc in docs:
+          for _ in range(len(text_chunks) // len(docs)):  # Distribute chunks across files
+            metadatas.append({
+              "user_id": user_id,
+              "course_name": "Course 1",
+              "file_name": doc.name
+            })
+
         collection.add(
           documents=text_chunks,
           embeddings=embeddings,
           ids=[f"{timestamp}_chunk{i}" for i in range(len(text_chunks))],
-          metadatas=[{"user_id": user_id, "course_name": "Course 1"}] * len(text_chunks)
+          metadatas=metadatas
         )
 
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(collection_name)
+        st.session_state.processed = True
+        st.success("Documents processed successfully!")
+
+  # Always create a new conversation chain when the page loads
+  if st.session_state.processed:
+    user_question = st.text_input("Ask a question about your documents:")
+    if user_question:
+      handle_userinput(user_question)
+  else:
+    st.info("Please upload and process your documents first!")
+
 
 if __name__ == '__main__':
   main()
