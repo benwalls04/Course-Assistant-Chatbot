@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain_openai import ChatOpenAI
 from htmlTemplates import css, bot_template, user_template
+import chromadb
+from datetime import datetime
 
 def get_pdf_text(pdf_docs):
   text = ""
@@ -27,11 +29,6 @@ def get_text_chunks(raw_text):
   )
   chunks = text_splitter.split_text(raw_text)
   return chunks
-
-def get_vectorstore(text_chunks):
-  embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-  vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-  return vectorstore
 
 def get_conversation_chain(vectorstore):
   llm = ChatOpenAI(
@@ -58,8 +55,21 @@ def handle_userinput(user_question):
     else: 
       st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
 
+def get_collection(client, user_id):
+  collection_name = f"user_{user_id}_collection"
+
+  try:
+    collection = client.get_collection(name=collection_name)
+  except Exception as e:
+    collection = client.create_collection(name=collection_name)
+
+  return collection
+
 def main():
   load_dotenv()
+  client = chromadb.Client()
+  user_id = "user_1"
+  collection = get_collection(client, user_id)
 
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
@@ -87,8 +97,13 @@ def main():
         # get the text chunks 
         text_chunks = get_text_chunks(raw_text)
 
-        # create vector store 
-        vectorstore = get_vectorstore(text_chunks)
+        # add to vector db 
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        collection.add(
+          documents=text_chunks,
+          ids=[f"{user_id}_{timestamp}_doc{i}" for i in range(len(text_chunks))],
+        )
+        
 
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(vectorstore)
