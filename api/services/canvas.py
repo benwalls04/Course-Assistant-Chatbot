@@ -4,7 +4,12 @@ import os
 
 class CanvasService:
   def __init__(self):
-    pass
+    load_dotenv()
+    self.CANVAS_API_KEY = os.getenv("CANVAS_API_KEY")
+    self.CANVAS_API_URL = os.getenv("CANVAS_API_URL")
+    self.headers = {
+      "Authorization": f"Bearer {self.CANVAS_API_KEY}"
+    }
 
   def get_course_name(self, original_course_name):
     if "-" in original_course_name and "(" in original_course_name:
@@ -15,15 +20,13 @@ class CanvasService:
       return original_course_name
 
   def get_file_details(self, file_id):
-    CANVAS_API_KEY = os.getenv("CANVAS_API_KEY")
-    CANVAS_API_URL = os.getenv("CANVAS_API_URL")
 
     headers = {
-      "Authorization": f"Bearer {CANVAS_API_KEY}"
+      "Authorization": f"Bearer {self.CANVAS_API_KEY}"
     }
 
     file_response = requests.get(
-        f"{CANVAS_API_URL}/files/{file_id}",
+        f"{self.CANVAS_API_URL}/files/{file_id}",
         headers=headers
     )
     
@@ -37,3 +40,21 @@ class CanvasService:
         }
     else:
         return None
+
+  def get_courses(self):
+    response = requests.get(f"{self.CANVAS_API_URL}/courses", headers=self.headers)
+    return response.json()
+
+  def get_modules(self, course_id):
+    response = requests.get(f"{self.CANVAS_API_URL}/courses/{course_id}/modules", headers=self.headers)
+    return response.json()
+
+  def get_module_items(self, course_id, module_id):
+    response = requests.get(
+        f"{self.CANVAS_API_URL}/courses/{course_id}/modules/{module_id}/items",
+        headers=self.headers
+    )
+
+    return response.json()
+    
+    

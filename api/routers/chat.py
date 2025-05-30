@@ -1,17 +1,11 @@
 from fastapi import APIRouter
 router = APIRouter()
+from main import vectorstore_service
 
-@router.post("/chat")
-async def chat(user_id, selected_course_id, message):
-  pass
+@router.get()
+async def get_conversation_chain(user_id, course_id):
+  collection_name = vectorstore_service.get_collection_name(user_id)
+  conversation_chain = vectorstore_service.get_conversation_chain(collection_name, course_id)
+  return conversation_chain
 
-@router.get("/collection")
-async def get_collection(user_id, client):
-  collection_name = f"user_{user_id}_collection"
-  try:
-    collection = client.get_collection(name=collection_name)
-  except Exception as e:
-    collection = client.create_collection(name=collection_name)
-
-  return collection
 

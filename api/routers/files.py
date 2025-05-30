@@ -1,19 +1,11 @@
 from fastapi import APIRouter
 from services.text import TextService
-from services.vectorstore import VectorStoreService
 from fastapi import HTTPException
+import requests
+from main import vectorstore_service
 
 router = APIRouter()
 text_service = TextService()
-vectorstore_service = VectorStoreService()
-
-@router.post()
-async def upload_docs(docs, user_id, selected_course_id):
-    raw_text = text_service.get_pdf_text(docs)
-    text_chunks = text_service.get_text_chunks(raw_text)
-    collection = vectorstore_service.get_collection(user_id)
-    vectorstore_service.store_docs(collection, docs, text_chunks, user_id, selected_course_id)
-    pass
 
 @router.get()
 async def get_files(user_id, selected_course_id):
@@ -28,5 +20,31 @@ async def get_files(user_id, selected_course_id):
         return file_names
     else: 
         return HTTPException(status_code=404, detail="No files found")
-      
 
+@router.post("/ingest_uploaded_files")
+async def upload_docs(docs, user_id, selected_course_id):
+    raw_text = text_service.get_pdf_text(docs)
+    text_chunks = text_service.get_text_chunks(raw_text)
+    collection = vectorstore_service.get_collection(user_id)
+    vectorstore_service.store_docs(collection, docs, text_chunks, user_id, selected_course_id)
+    pass
+    
+@router.post("/ingest_canvas_files")
+async def ingest_canvas_files(file_details, user_id, course_id):
+  docs = []
+  for file in file_details:
+    response = requests.get(file['url'])
+    if response.status_code == 200:
+      if not file['content_type'] == 'application/pdf':
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+      elif file['name'] in vectorstore_service.get_collection(user_id).get():
+        raise HTTPException(status_code=400, detail="File already exists")
+      else:
+        docs.append(response.content)
+    else:
+      raise HTTPException(status_code=400, detail="Failed to download file")
+    
+  raw_text = text_service.get_pdf_text(docs)
+  text_chunks = text_service.get_text_chunks(raw_text)
+  collection = vectorstore_service.get_collection(user_id)
+  vectorstore_service.store_docs(collection, docs, text_chunks, user_id, course_id)
