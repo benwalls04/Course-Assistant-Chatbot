@@ -17,47 +17,6 @@ import mimetypes
 
 backend_url = "http://localhost:8000"
 
-def get_pdf_text(pdf_docs):
-  text = ""
-  for pdf in pdf_docs:
-    pdf_reader = PdfReader(pdf)
-    for page in pdf_reader.pages:
-      text += page.extract_text()
-
-  return text
-
-def get_text_chunks(raw_text):
-  text_splitter = CharacterTextSplitter(
-    separator = "\n",
-    chunk_size=1000,
-    chunk_overlap=200,
-    length_function=len
-  )
-  chunks = text_splitter.split_text(raw_text)
-  return chunks
-
-def store_docs(collection, docs, text_chunks, user_id, course_id):
-  embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-  embeddings = embedding_model.embed_documents(text_chunks)
-  timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-  # Create metadata with file names
-  metadatas = []
-  for doc in docs:
-    for _ in range(len(text_chunks) // len(docs)):  # Distribute chunks across files
-      metadatas.append({
-        "user_id": user_id,
-        "course_id": course_id,
-        "file_name": doc.name
-      })
-
-  collection.add(
-    documents=text_chunks,
-    embeddings=embeddings,
-    ids=[f"{timestamp}_chunk{i}" for i in range(len(text_chunks))],
-    metadatas=metadatas
-  )
-
 def get_conversation_chain(collection_name, course_id):
 
   vectorstore = Chroma(
@@ -167,10 +126,10 @@ def get_module_docs(canvas_api_key, canvas_api_url, course_id, module_id):
         st.error(f"Error making request: {str(e)}")
         return []
 
-def show_existing_files(collection, selected_course_id, collection_name):    
+def show_existing_files(selected_course_id, collection_name):    
   # Get existing documents from the collection
   response = requests.get(f"{backend_url}/files", params={
-    'collection': collection,
+    'user_id': st.session_state.user_id,
     'selected_course_id': selected_course_id
   })
 
@@ -213,17 +172,8 @@ def main():
   client = chromadb.PersistentClient(path="chroma_db")
 
   #TODO: add auth
-  user_id = "user_1"
-  collection_name = f"user_{user_id}_collection"
-
-  response = requests.get(
-    f"{backend_url}/chat/collection",
-    params={
-      'user_id': user_id,
-      'client': client
-    },
-  )
-  collection = response.json()
+  st.session_state.user_id = "user_1"
+  collection_name = f"user_{st.session_state.user_id}_collection"
 
   canvas_api_key = os.getenv("CANVAS_API_KEY")
   canvas_api_url = "https://canvas.instructure.com/api/v1"
@@ -273,7 +223,7 @@ def main():
 
   with st.sidebar:
     st.subheader("Your documents")
-    show_existing_files(collection, selected_course_id, collection_name)
+    show_existing_files(selected_course_id, collection_name)
 
     st.subheader("Download a module")
     module_names = ["No module selected"] + [module["name"] for module in modules]
@@ -314,9 +264,11 @@ def main():
 
                   all_docs.append(uploaded_like_file)
 
-        raw_text = get_pdf_text(all_docs)
-        text_chunks = get_text_chunks(raw_text)
-        store_docs(collection, all_docs, text_chunks, user_id, selected_course_id)
+        requests.post(f"{backend_url}/files", params={
+          'docs': all_docs,
+          'user_id': st.session_state.user_id,
+          'selected_course_id': selected_course_id
+        })
     
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(collection_name, selected_course_id)
@@ -328,7 +280,6 @@ def main():
     show_user_question()
   else:
     st.info("Please upload and process your documents first!")
-
 
 if __name__ == '__main__':
   main()

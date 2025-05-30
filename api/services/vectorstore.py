@@ -1,9 +1,21 @@
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from datetime import datetime
+import chromadb
+from chromadb.config import Settings
 
 class VectorStoreService:
   def __init__(self):
-    pass
+    self.client = chromadb.PersistentClient(
+      path="chroma_db",
+      settings=Settings(allow_reset=True)
+    )
+
+  def get_collection(self, user_id):
+    collection_name = f"user_{user_id}_collection"
+    try:
+      return self.client.get_collection(name=collection_name)
+    except:
+      return self.client.create_collection(name=collection_name)
 
   def store_docs(collection, docs, text_chunks, user_id, course_id):
     embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
