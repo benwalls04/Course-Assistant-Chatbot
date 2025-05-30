@@ -12,6 +12,8 @@ import chromadb
 from datetime import datetime
 import os
 import requests
+import io
+import mimetypes
 
 def get_pdf_text(pdf_docs):
   text = ""
@@ -20,7 +22,7 @@ def get_pdf_text(pdf_docs):
     for page in pdf_reader.pages:
       text += page.extract_text()
 
-    return text
+  return text
 
 def get_text_chunks(raw_text):
   text_splitter = CharacterTextSplitter(
@@ -98,7 +100,7 @@ def get_courses(canvas_api_key, canvas_api_url):
   headers = {
     "Authorization": f"Bearer {canvas_api_key}"
   }
-  response = requests.get(f"{canvas_api_url}/courses", headers=headers, params={"enrollment_state": "completed"})
+  response = requests.get(f"{canvas_api_url}/courses", headers=headers)
 
   courses = []
   for course in response.json():
@@ -149,33 +151,82 @@ def get_module_docs(canvas_api_key, canvas_api_url, course_id, module_id):
     headers = {
         "Authorization": f"Bearer {canvas_api_key}"
     }
-
-    response = requests.get(f"{canvas_api_url}/courses/{course_id}/modules/{module_id}/items", headers=headers)
-
-    items = []
-    for item in response.json():
-      if item["type"] == "File":
-        items.append(item)
     
-    st.write(items)
-
-    return items
+    try:
+        response = requests.get(
+            f"{canvas_api_url}/courses/{course_id}/modules/{module_id}/items", 
+            headers=headers
+        )
+        
+        if response.status_code == 200:
+            items = response.json()
+            
+            # Filter for only file items
+            file_items = [item for item in items if item.get('type') == 'File']
+            
+            if not file_items:
+                st.warning("No files found in this module.")
+                return []
+                
+            # Get file details for each file item
+            file_details = []
+            for file_item in file_items:
+                file_id = file_item['content_id']
+                file_response = requests.get(
+                    f"{canvas_api_url}/files/{file_id}",
+                    headers=headers
+                )
+                
+                if file_response.status_code == 200:
+                    file_data = file_response.json()
+                    file_details.append({
+                        'id': file_id,
+                        'name': file_data['display_name'],
+                        'url': file_data['url'],
+                        'content_type': file_data['content-type']
+                    })
+                else:
+                    st.error(f"Error fetching file details for {file_item['title']}: {file_response.status_code}")
+            
+            return file_details
+            
+        elif response.status_code == 404:
+            st.error(f"Module not found. Please check if the module ID {module_id} is correct.")
+            return []
+        elif response.status_code == 401:
+            st.error("Authentication failed. Please check your API key.")
+            return []
+        else:
+            st.error(f"Error fetching module items: {response.status_code}")
+            st.write("Error Response:", response.text)
+            return []
+            
+    except Exception as e:
+        st.error(f"Error making request: {str(e)}")
+        return []
 
 def main():
+  backend_url = "http://localhost:8000"
   load_dotenv()
   client = chromadb.PersistentClient(path="chroma_db")
+
+  #TODO: add auth
   user_id = "user_1"
   collection_name = f"user_{user_id}_collection"
-  try:
-    collection = client.get_collection(name=collection_name)
-  except Exception as e:
-    collection = client.create_collection(name=collection_name)
 
+  response = requests.get(
+    f"{backend_url}/chat/collection",
+    params={
+      'user_id': user_id,
+      'client': client
+    },
+  )
+  collection = response.json()
 
   canvas_api_key = os.getenv("CANVAS_API_KEY")
   canvas_api_url = "https://canvas.instructure.com/api/v1"
-  courses = get_courses(canvas_api_key, canvas_api_url)
-  modules = get_modules(canvas_api_key, canvas_api_url, courses[0]["id"])
+  courses = get_courses()
+  modules = get_modules(courses[0]["id"])
 
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
@@ -189,41 +240,44 @@ def main():
 
   st.header("Course Assistant")
 
-  # Create a selectbox for course selection
-  course_names = [course["name"] for course in courses]
-  selected_course = st.selectbox(
-    "Select a course:",
-    options=course_names,
-    index=0 if course_names else None
+  # Initialize session state for course and module if not already set
+  if 'selected_course' not in st.session_state:
+      st.session_state.selected_course = None
+  if 'selected_module' not in st.session_state:
+      st.session_state.selected_module = None
+
+  # Course selection
+  course_options = {course['name']: course['id'] for course in courses}
+  selected_course_name = st.selectbox(
+      "Select a course",
+      options=list(course_options.keys()),
+      index=0 if not st.session_state.selected_course else list(course_options.keys()).index(st.session_state.selected_course)
   )
 
-  # Get the selected course ID
-  selected_course_id = next(
-    (course["id"] for course in courses if course["name"] == selected_course),
-    None
-  )
+  # Update session state when course changes
+  if selected_course_name != st.session_state.selected_course:
+      st.session_state.selected_course = selected_course_name
+      st.session_state.selected_module = None  # Reset module when course changes
 
-  if selected_course:
-    st.subheader(f"Selected Course: {selected_course}")
-    
-    # Check if course has changed
-    if "previous_course" not in st.session_state:
-        st.session_state.previous_course = selected_course_id
-    elif st.session_state.previous_course != selected_course_id:
-        handle_course_change(collection_name, selected_course_id)
-        modules = get_modules(canvas_api_key, canvas_api_url, selected_course_id)
+  selected_course_id = course_options[selected_course_name]
+
+  # Module selection
+  modules = get_modules(selected_course_id)
 
   with st.sidebar:
     st.subheader("Your documents")
     
     # Get existing documents from the collection
-    existing_docs = collection.get()
-    if existing_docs and existing_docs['metadatas']:
-      # Get unique file names from metadata
-      file_names = set()
-      for metadata in existing_docs['metadatas']:
-        if 'file_name' in metadata and 'course_id' in metadata and metadata['course_id'] == selected_course_id:
-          file_names.add(metadata['file_name'])
+
+    response = requests.get(f"{backend_url}/files", params={
+      'collection': collection,
+      'selected_course_id': selected_course_id
+    })
+
+    if response.status_code == 200:
+      file_names = response.json()
+      for file_name in file_names:
+        st.write(f"{file_name}")
       
       for i, file_name in enumerate(sorted(file_names)):
         st.write(f"{i+1}. {file_name}")
@@ -233,27 +287,51 @@ def main():
       if not st.session_state.conversation:
         st.session_state.conversation = get_conversation_chain(collection_name, selected_course_id)
 
+    else: 
+      st.error("Error fetching files")
+
     st.subheader("Download a module")
     module_names = ["No module selected"] + [module["name"] for module in modules]
     selected_module = st.selectbox("Select a module:", options=module_names, index=0 if module_names else None)
     
-    docs = st.file_uploader("Or upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+    all_docs = []
+    uploaded_docs = st.file_uploader("Or upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+    all_docs.extend(uploaded_docs)
     
     if st.button("Process"):  
       with st.spinner("Processing"): 
 
         if selected_module != "No module selected":
           module_id = next(module["id"] for module in modules if module["name"] == selected_module)
-          docs = get_module_docs(canvas_api_key, canvas_api_url, selected_course_id, module_id)
-        
-        # get the text 
-        raw_text = get_pdf_text(docs)
+          file_details = get_module_docs(canvas_api_key, canvas_api_url, selected_course_id, module_id)
+          
+          if file_details:
+            st.write(file_details)
+            st.write("Found files:")
+            for file in file_details:
+                st.write(f"- {file['name']} ({file['content_type']})")
+            
+            # Download files to the uploads directory
+            for file in file_details:
+              response = requests.get(file['url'])
+              if response.status_code == 200:
+                  # Save to the uploads directory
+                  file_path = os.path.join(os.path.dirname(__file__), 'uploads', file['name'])
+                  os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                  
+                  # Save the file
+                  with open(file_path, 'rb') as f:
+                    file_bytes = f.read()
 
-        # get the text chunks 
+                  uploaded_like_file = io.BytesIO(file_bytes)
+                  uploaded_like_file.name = file['name']  # Streamlit uploader sets .name
+                  uploaded_like_file.type = mimetypes.guess_type(file['name'])[0] or "application/octet-stream"
+
+                  all_docs.append(uploaded_like_file)
+
+        raw_text = get_pdf_text(all_docs)
         text_chunks = get_text_chunks(raw_text)
-
-        # create vector store 
-        store_docs(collection, docs, text_chunks, user_id, selected_course_id)
+        store_docs(collection, all_docs, text_chunks, user_id, selected_course_id)
     
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(collection_name, selected_course_id)
