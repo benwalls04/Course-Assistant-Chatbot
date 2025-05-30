@@ -6,7 +6,7 @@ import os
 
 router = APIRouter()
 
-@router.get("/courses")
+@router.get("")
 def get_courses():
   canvas_service = CanvasService()
   CANVAS_API_KEY = os.getenv("CANVAS_API_KEY")
@@ -26,7 +26,7 @@ def get_courses():
       })
   return courses
 
-@router.get("/courses/{course_id}/modules")
+@router.get("/modules")
 def get_modules(course_id):
 
   load_dotenv()

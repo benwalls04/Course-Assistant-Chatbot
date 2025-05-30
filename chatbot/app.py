@@ -15,6 +15,8 @@ import requests
 import io
 import mimetypes
 
+backend_url = "http://localhost:8000"
+
 def get_pdf_text(pdf_docs):
   text = ""
   for pdf in pdf_docs:
@@ -96,46 +98,6 @@ def handle_userinput(user_question):
     else: 
       st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
 
-def get_courses(canvas_api_key, canvas_api_url):
-  headers = {
-    "Authorization": f"Bearer {canvas_api_key}"
-  }
-  response = requests.get(f"{canvas_api_url}/courses", headers=headers)
-
-  courses = []
-  for course in response.json():
-    if "name" in course:
-      full_name = course["name"]
-      if "-" in full_name and "(" in full_name:
-          name_parts = full_name.split("-", 1)
-          course_name = name_parts[1].split("(")[0]
-          courses.append({
-              "id": course["id"],
-              "name": course_name
-          })
-      else: 
-        courses.append({
-          "id": course["id"],
-          "name": full_name
-        })
-  return courses
-
-def get_modules(canvas_api_key, canvas_api_url, course_id):
-  headers = {
-    "Authorization": f"Bearer {canvas_api_key}"
-  }
-  response = requests.get(f"{canvas_api_url}/courses/{course_id}/modules", headers=headers)
-
-  modules = []
-
-  for module in response.json():
-    modules.append({
-      "id": module["id"],
-      "name": module["name"]
-    })
-
-  return modules
-
 def handle_course_change(collection_name, course_id):
   st.session_state.chat_history = []
   st.session_state.previous_course = course_id
@@ -205,8 +167,48 @@ def get_module_docs(canvas_api_key, canvas_api_url, course_id, module_id):
         st.error(f"Error making request: {str(e)}")
         return []
 
+def show_existing_files(collection, selected_course_id, collection_name):    
+  # Get existing documents from the collection
+  response = requests.get(f"{backend_url}/files", params={
+    'collection': collection,
+    'selected_course_id': selected_course_id
+  })
+
+  if response.status_code == 200:
+    file_names = response.json()
+    for file_name in file_names:
+      st.write(f"{file_name}")
+    
+    for i, file_name in enumerate(sorted(file_names)):
+      st.write(f"{i+1}. {file_name}")
+    
+    # If there are existing documents, set processed to True and create conversation chain
+    st.session_state.processed = True
+    if not st.session_state.conversation:
+      st.session_state.conversation = get_conversation_chain(collection_name, selected_course_id)
+
+  else: 
+    st.error("Error fetching files")
+
+def show_user_question():
+  # Initialize user_question in session state if it doesn't exist
+  if "user_question" not in st.session_state:
+      st.session_state.user_question = ""
+  
+  # Use the session state variable for the text input
+  user_question = st.text_input(
+      "Ask a question about your documents:",
+      value=st.session_state.user_question,
+      key="question_input"
+  )
+  
+  # Update session state with new question
+  st.session_state.user_question = user_question
+  
+  if user_question:
+      handle_userinput(user_question)
+
 def main():
-  backend_url = "http://localhost:8000"
   load_dotenv()
   client = chromadb.PersistentClient(path="chroma_db")
 
@@ -225,8 +227,11 @@ def main():
 
   canvas_api_key = os.getenv("CANVAS_API_KEY")
   canvas_api_url = "https://canvas.instructure.com/api/v1"
-  courses = get_courses()
-  modules = get_modules(courses[0]["id"])
+
+  courses = requests.get(f"{backend_url}/courses")
+  modules = requests.get(f"{backend_url}/courses/modules", params={
+    'course_id': courses[0]["id"]
+  })
 
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
@@ -262,33 +267,13 @@ def main():
   selected_course_id = course_options[selected_course_name]
 
   # Module selection
-  modules = get_modules(selected_course_id)
+  modules = requests.get(f"{backend_url}/courses/modules", params={
+    'course_id': selected_course_id
+  })
 
   with st.sidebar:
     st.subheader("Your documents")
-    
-    # Get existing documents from the collection
-
-    response = requests.get(f"{backend_url}/files", params={
-      'collection': collection,
-      'selected_course_id': selected_course_id
-    })
-
-    if response.status_code == 200:
-      file_names = response.json()
-      for file_name in file_names:
-        st.write(f"{file_name}")
-      
-      for i, file_name in enumerate(sorted(file_names)):
-        st.write(f"{i+1}. {file_name}")
-      
-      # If there are existing documents, set processed to True and create conversation chain
-      st.session_state.processed = True
-      if not st.session_state.conversation:
-        st.session_state.conversation = get_conversation_chain(collection_name, selected_course_id)
-
-    else: 
-      st.error("Error fetching files")
+    show_existing_files(collection, selected_course_id, collection_name)
 
     st.subheader("Download a module")
     module_names = ["No module selected"] + [module["name"] for module in modules]
@@ -340,22 +325,7 @@ def main():
 
   # Always create a new conversation chain when the page loads
   if st.session_state.processed:
-    # Initialize user_question in session state if it doesn't exist
-    if "user_question" not in st.session_state:
-        st.session_state.user_question = ""
-    
-    # Use the session state variable for the text input
-    user_question = st.text_input(
-        "Ask a question about your documents:",
-        value=st.session_state.user_question,
-        key="question_input"
-    )
-    
-    # Update session state with new question
-    st.session_state.user_question = user_question
-    
-    if user_question:
-        handle_userinput(user_question)
+    show_user_question()
   else:
     st.info("Please upload and process your documents first!")
 
