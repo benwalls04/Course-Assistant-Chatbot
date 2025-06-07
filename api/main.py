@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from mangum import Mangum
 from routers import files, courses, chat, auth
-from services.vectorstore import VectorStoreService
+from services.vectorstore_instance import vectorstore_service
 
 app = FastAPI()
-vectorstore_service = VectorStoreService()
+
 app.include_router(files.router, prefix="/files")
 app.include_router(courses.router, prefix="/courses")
 app.include_router(chat.router, prefix="/chat")

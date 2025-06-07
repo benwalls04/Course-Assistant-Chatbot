@@ -10,7 +10,7 @@ def get_courses():
   response = canvas_service.get_courses()
 
   courses = []
-  for course in response.json():
+  for course in response:
     if "name" in course:
       courses.append({
         "id": course["id"],

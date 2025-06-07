@@ -1,15 +1,8 @@
 import streamlit as st 
 from dotenv import load_dotenv
-from PyPDF2 import PdfReader
-from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
-from langchain_openai import ChatOpenAI
 from htmlTemplates import css, bot_template, user_template
-import os
 import requests
+
 backend_url = "http://localhost:8000"
 
 def handle_userinput(user_question):
@@ -108,7 +101,7 @@ def main():
   #TODO: add auth
   st.session_state.user_id = "user_1"
   
-  courses = requests.get(f"{backend_url}/courses")
+  courses = requests.get(f"{backend_url}/courses").json()
   modules = requests.get(f"{backend_url}/courses/modules", params={
     'course_id': courses[0]["id"]
   })
@@ -116,6 +109,7 @@ def main():
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
 
+  # Initialize session state variables
   if "conversation" not in st.session_state:
     st.session_state.conversation = None
   if "chat_history" not in st.session_state:

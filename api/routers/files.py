@@ -2,12 +2,12 @@ from fastapi import APIRouter
 from services.text import TextService
 from fastapi import HTTPException
 import requests
-from main import vectorstore_service
+from services.vectorstore_instance import vectorstore_service
 
 router = APIRouter()
 text_service = TextService()
 
-@router.get()
+@router.get("")
 async def get_files(user_id, selected_course_id):
     collection = vectorstore_service.get_collection(user_id)
     existing_docs = collection.get()
@@ -19,7 +19,7 @@ async def get_files(user_id, selected_course_id):
                 file_names.add(metadata['file_name'])
         return file_names
     else: 
-        return HTTPException(status_code=404, detail="No files found")
+        raise HTTPException(status_code=404, detail="No files found")
 
 @router.post("/ingest_uploaded_files")
 async def upload_docs(docs, user_id, selected_course_id):
