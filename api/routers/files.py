@@ -54,6 +54,7 @@ async def ingest_canvas_files(
         raise HTTPException(status_code=400, detail="File already exists")
       else:
         text_chunks = text_service.get_pdf_text_chunks(BytesIO(response.content))
+        print("text chunks: ", len(text_chunks))
         all_text_chunks.extend(text_chunks)
         all_metadatas.extend([{
           "user_id": user_id,

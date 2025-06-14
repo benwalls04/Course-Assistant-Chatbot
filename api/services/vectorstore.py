@@ -11,19 +11,26 @@ from chromadb.config import Settings
 
 class VectorStoreService:
   def __init__(self):
-    self.client = chromadb.PersistentClient(
-      path="chroma_db",
-      settings=Settings(allow_reset=True)
-    )
     load_dotenv()
+    try:
+        self.client = chromadb.PersistentClient(
+            path="chroma_db",
+            settings=Settings(allow_reset=True)
+        )
+        print("[VectorStoreService] Connected to ChromaDB at path: chroma_db")
+    except Exception as e:
+        print("[VectorStoreService] Failed to connect to ChromaDB:", e)
+        raise e  # re-raise so your app fails early if connection isn't valid
 
   def get_collection(self, user_id):
     collection_name = self.get_collection_name(user_id)
-
     try:
-      return self.client.get_collection(name=collection_name)
+        collection = self.client.get_collection(name=collection_name)
+        print(f"[VectorStoreService] Found existing collection: {collection_name}")
+        return collection
     except:
-      return self.client.create_collection(name=collection_name)
+        print(f"[VectorStoreService] Creating new collection: {collection_name}")
+        return self.client.create_collection(name=collection_name)
 
   def get_collection_name(self, user_id):
     return f"user_{user_id}_collection"
@@ -57,17 +64,24 @@ class VectorStoreService:
     return conversation_chain
 
   def store_docs(self, text_chunks, metadata):
+    print(f"[store_docs] Attempting to store {len(text_chunks)} chunks...")
+
     embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     embeddings = embedding_model.embed_documents(text_chunks)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     collection = self.get_collection(metadata[0]["user_id"])
+    print(f"[store_docs] Using collection: {collection.name}")
 
     collection.add(
-      documents=text_chunks,
-      embeddings=embeddings,
-      ids=[f"{timestamp}_chunk{i}" for i in range(len(text_chunks))],
-      metadatas=metadata
+        documents=text_chunks,
+        embeddings=embeddings,
+        ids=[f"{timestamp}_chunk{i}" for i in range(len(text_chunks))],
+        metadatas=metadata
     )
+
+    print(f"[store_docs] Successfully stored all chunks.")
+
+
 
 
