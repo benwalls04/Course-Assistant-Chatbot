@@ -25,7 +25,7 @@ def get_modules(course_id):
   response = canvas_service.get_modules(course_id)
   modules = []
 
-  for module in response.json():
+  for module in response:
     modules.append({
       "id": module["id"],
       "name": module["name"]

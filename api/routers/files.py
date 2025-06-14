@@ -3,9 +3,18 @@ from services.text import TextService
 from fastapi import HTTPException
 import requests
 from services.vectorstore_instance import vectorstore_service
-
+from fastapi import Body, Query
+from typing import List, Dict
+from pydantic import BaseModel
+from io import BytesIO
 router = APIRouter()
 text_service = TextService()
+
+class FileDetails(BaseModel):
+  id: int
+  name: str
+  url: str
+  content_type: str
 
 @router.get("")
 async def get_files(user_id, selected_course_id):
@@ -21,30 +30,37 @@ async def get_files(user_id, selected_course_id):
     else: 
         raise HTTPException(status_code=404, detail="No files found")
 
-@router.post("/ingest_uploaded_files")
-async def upload_docs(docs, user_id, selected_course_id):
-    raw_text = text_service.get_pdf_text(docs)
-    text_chunks = text_service.get_text_chunks(raw_text)
-    collection = vectorstore_service.get_collection(user_id)
-    vectorstore_service.store_docs(collection, docs, text_chunks, user_id, selected_course_id)
-    pass
+# @router.post("/ingest_uploaded_files")
+# async def upload_docs(docs, user_id, selected_course_id):
+#     raw_text = text_service.get_pdf_text(docs)
+#     text_chunks = text_service.get_text_chunks(raw_text)
+#     vectorstore_service.store_docs(docs, text_chunks, user_id, selected_course_id)
     
 @router.post("/ingest_canvas_files")
-async def ingest_canvas_files(file_details, user_id, course_id):
-  docs = []
+async def ingest_canvas_files(
+    file_details: List[FileDetails] = Body(...),
+    user_id: str = Query(...),
+    course_id: str = Query(...)
+):
+  all_text_chunks = []
+  all_metadatas = []
+
   for file in file_details:
-    response = requests.get(file['url'])
+    response = requests.get(file.url)
     if response.status_code == 200:
-      if not file['content_type'] == 'application/pdf':
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
-      elif file['name'] in vectorstore_service.get_collection(user_id).get():
+      if not file.content_type == 'application/pdf':
+        raise HTTPException(status_code=400, detail="Only PDF files are supported for now")
+      elif file.name in vectorstore_service.get_collection(user_id).get():
         raise HTTPException(status_code=400, detail="File already exists")
       else:
-        docs.append(response.content)
+        text_chunks = text_service.get_pdf_text_chunks(BytesIO(response.content))
+        all_text_chunks.extend(text_chunks)
+        all_metadatas.extend([{
+          "user_id": user_id,
+          "course_id": course_id,
+          "file_name": file.name
+        }] * len(text_chunks))
     else:
       raise HTTPException(status_code=400, detail="Failed to download file")
     
-  raw_text = text_service.get_pdf_text(docs)
-  text_chunks = text_service.get_text_chunks(raw_text)
-  collection = vectorstore_service.get_collection(user_id)
-  vectorstore_service.store_docs(collection, docs, text_chunks, user_id, course_id)
+  vectorstore_service.store_docs(all_text_chunks, all_metadatas)

@@ -57,6 +57,8 @@ def show_existing_files():
         'course_id': st.session_state.course_id
       })
 
+  elif response.status_code == 404:
+    st.write("No documents found for this course")
   else: 
     st.error("Error fetching files")
 
@@ -79,10 +81,12 @@ def show_conversation():
       handle_userinput(user_question)
 
 def download_module(module_id):
-  file_details = requests.get(f"{backend_url}/courses/items", params={
+  file_details_response = requests.get(f"{backend_url}/courses/items", params={
     'course_id': st.session_state.course_id,
     'module_id': module_id
   })
+
+  file_details = file_details_response.json()
   
   if file_details:
     st.write("Found files:")
@@ -90,11 +94,13 @@ def download_module(module_id):
         st.write(f"- {file['name']} ({file['content_type']})")
     
     # Ingest canvas files first
-    requests.post(f"{backend_url}/files/ingest_canvas_files", params={
-      'file_details': file_details,
-      'user_id': st.session_state.user_id,
-      'course_id': st.session_state.course_id
-    })
+    requests.post(f"{backend_url}/files/ingest_canvas_files",
+    params={
+        'user_id': st.session_state.user_id,
+        'course_id': st.session_state.course_id
+    },
+    json=file_details 
+    )
 
 def main():
   load_dotenv()
@@ -136,9 +142,10 @@ def main():
       handle_course_change(selected_course_name, course_options[selected_course_name])
 
   # Module selection
-  modules = requests.get(f"{backend_url}/courses/modules", params={
+  modules_response = requests.get(f"{backend_url}/courses/modules", params={
     'course_id': st.session_state.course_id
   })
+  modules = modules_response.json()
 
   with st.sidebar:
     st.subheader("Your documents")
@@ -148,7 +155,7 @@ def main():
     module_names = ["No module selected"] + [module["name"] for module in modules]
     selected_module = st.selectbox("Select a module:", options=module_names, index=0 if module_names else None)
     
-    uploaded_docs = st.file_uploader("Or upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+    #uploaded_docs = st.file_uploader("Or upload your PDFs here and click on 'Process'", accept_multiple_files=True)
     
     if st.button("Process"):  
       with st.spinner("Processing"): 
@@ -158,11 +165,12 @@ def main():
           download_module(module_id)
 
         # Ingest uploaded files 
-        requests.post(f"{backend_url}/files/ingest_uploaded_files", params={
-          'docs': uploaded_docs,
-          'user_id': st.session_state.user_id,
-          'selected_course_id': st.session_state.course_id
-        })
+        # if uploaded_docs and len(uploaded_docs) > 0:
+        #   requests.post(f"{backend_url}/files/ingest_uploaded_files", params={
+        #     'docs': uploaded_docs,
+        #     'user_id': st.session_state.user_id,
+        #     'selected_course_id': st.session_state.course_id
+        #   })
     
         # create conversation chain
         st.session_state.conversation = requests.get(f"{backend_url}/chat", params={
@@ -176,7 +184,7 @@ def main():
   if st.session_state.processed:
     show_conversation()
   else:
-    st.info("Please upload and process your documents first!")
+    st.info("Please download some documents first!")
 
 if __name__ == '__main__':
   main()

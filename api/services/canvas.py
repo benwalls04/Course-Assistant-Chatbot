@@ -55,6 +55,6 @@ class CanvasService:
         headers=self.headers
     )
 
-    return response.json()
+    return response
     
     
