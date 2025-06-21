@@ -45,13 +45,18 @@ async def ingest_canvas_files(
   all_text_chunks = []
   all_metadatas = []
 
+  existing = vectorstore_service.get_collection(user_id).get()
+  existing_files = {meta.get("file_name") for meta in existing.get("metadatas", [])}
+
   for file in file_details:
     response = requests.get(file.url)
     if response.status_code == 200:
       if not file.content_type == 'application/pdf':
-        raise HTTPException(status_code=400, detail="Only PDF files are supported for now")
-      elif file.name in vectorstore_service.get_collection(user_id).get():
-        raise HTTPException(status_code=400, detail="File already exists")
+        print(f"[ingest] Skipping {file.name}: not a PDF file")
+        continue
+      elif file.name in existing_files:
+        print(f"[ingest] Skipping {file.name}: already exists in collection")
+        continue
       else:
         text_chunks = text_service.get_pdf_text_chunks(BytesIO(response.content))
         print("text chunks: ", len(text_chunks))
@@ -62,6 +67,7 @@ async def ingest_canvas_files(
           "file_name": file.name
         }] * len(text_chunks))
     else:
-      raise HTTPException(status_code=400, detail="Failed to download file")
+      print(f"[ingest] Skipping {file.name}: failed to download file")
+      continue
     
   vectorstore_service.store_docs(all_text_chunks, all_metadatas)

@@ -38,7 +38,7 @@ class VectorStoreService:
     return f"user_{user_id}_collection"
   
   def get_conversation_chain(self, collection_name, course_id):  
-    vectorstore = Chroma.from_client(
+    vectorstore = Chroma(
       client=self.client,
       collection_name=collection_name,
       embedding_function=self.embedding_model,

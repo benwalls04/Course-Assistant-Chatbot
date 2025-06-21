@@ -6,14 +6,24 @@ import requests
 backend_url = "http://localhost:8000"
 
 def handle_userinput(user_question):
-  response = st.session_state.conversation({'question': user_question})
-  st.session_state.chat_history = response["chat_history"]
+    payload = {
+        "user_id": st.session_state.user_id,
+        "course_id": st.session_state.course_id,
+        "question": user_question
+    }
+    response = requests.post(f"{backend_url}/chat/query", json=payload)
 
-  for i, message in enumerate(st.session_state.chat_history):
-    if i % 2 == 0:
-      st.write(user_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
-    else: 
-      st.write(bot_template.replace("{{MSG}}", message.content), unsafe_allow_html=True)
+    if response.status_code == 200:
+        data = response.json()
+        st.session_state.chat_history = data.get("chat_history", [])
+
+        for i, message in enumerate(st.session_state.chat_history):
+            if i % 2 == 0:
+                st.write(user_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
+            else:
+                st.write(bot_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
+    else:
+        st.error(f"Backend returned error: {response.status_code}")
 
 def handle_course_change(selected_course_name, course_id):
     st.session_state.selected_course = selected_course_name
