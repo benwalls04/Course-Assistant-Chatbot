@@ -12,33 +12,36 @@ from chromadb.config import Settings
 class VectorStoreService:
   def __init__(self):
     load_dotenv()
+
+    # Set up embedding model once
+    self.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+    # Create only ONE ChromaDB PersistentClient instance
     try:
-        self.client = chromadb.PersistentClient(
-            path="chroma_db",
-            settings=Settings(allow_reset=True)
-        )
+        self.client = chromadb.PersistentClient(path="chroma_db")
         print("[VectorStoreService] Connected to ChromaDB at path: chroma_db")
     except Exception as e:
         print("[VectorStoreService] Failed to connect to ChromaDB:", e)
-        raise e  # re-raise so your app fails early if connection isn't valid
+        raise e
 
   def get_collection(self, user_id):
-    collection_name = self.get_collection_name(user_id)
-    try:
-        collection = self.client.get_collection(name=collection_name)
-        print(f"[VectorStoreService] Found existing collection: {collection_name}")
-        return collection
-    except:
-        print(f"[VectorStoreService] Creating new collection: {collection_name}")
-        return self.client.create_collection(name=collection_name)
+      collection_name = self.get_collection_name(user_id)
+      try:
+          collection = self.client.get_collection(name=collection_name)
+          print(f"[VectorStoreService] Found existing collection: {collection_name}")
+          return collection
+      except:
+          print(f"[VectorStoreService] Creating new collection: {collection_name}")
+          return self.client.create_collection(name=collection_name)
 
   def get_collection_name(self, user_id):
     return f"user_{user_id}_collection"
   
   def get_conversation_chain(self, collection_name, course_id):  
-    vectorstore = Chroma(
+    vectorstore = Chroma.from_client(
+      client=self.client,
       collection_name=collection_name,
-      embedding_function=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2"),
+      embedding_function=self.embedding_model,
       persist_directory="chroma_db"
     )
 
@@ -66,8 +69,7 @@ class VectorStoreService:
   def store_docs(self, text_chunks, metadata):
     print(f"[store_docs] Attempting to store {len(text_chunks)} chunks...")
 
-    embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    embeddings = embedding_model.embed_documents(text_chunks)
+    embeddings = self.embedding_model.embed_documents(text_chunks)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     collection = self.get_collection(metadata[0]["user_id"])
