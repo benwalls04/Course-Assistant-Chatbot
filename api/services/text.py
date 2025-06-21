@@ -16,7 +16,11 @@ class TextService:
     pdf_reader = PdfReader(pdf_doc)
     text = ""
     for page in pdf_reader.pages:
-      text += page.extract_text() or ""
+      try:
+        text += page.extract_text() or ""
+      except Exception as e:
+        print(f"[PDF extract_text error] Skipping page due to error: {e}")
+        continuetext += page.extract_text() or ""
     
     chunks = text_splitter.split_text(text)
       

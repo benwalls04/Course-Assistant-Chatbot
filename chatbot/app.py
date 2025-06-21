@@ -57,8 +57,11 @@ def show_existing_files():
 
   if response.status_code == 200:
     file_names = response.json()
-    for file_name in file_names:
-      st.write(f"{file_name}")
+    if len(file_names) > 0:
+      for file_name in file_names:
+        st.write(f"{file_name}")
+    else:
+       st.write("No documents found")
     
     # If there are existing documents, set processed to True and create conversation chain
     st.session_state.processed = True

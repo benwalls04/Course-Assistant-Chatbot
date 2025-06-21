@@ -59,6 +59,11 @@ class VectorStoreService:
       }
     )
 
+    docs = retriever.get_relevant_documents("test query for debugging")
+    print(f"[Debug] Number of documents retrieved with filter course_id={str(course_id)}: {len(docs)}")
+    for i, doc in enumerate(docs):
+        print(f"Doc {i}: metadata={doc.metadata}")
+
     conversation_chain = ConversationalRetrievalChain.from_llm( 
       llm=llm,
       retriever=retriever,

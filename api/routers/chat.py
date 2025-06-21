@@ -19,7 +19,7 @@ async def get_conversation_chain(user_id, course_id):
 @router.post("/query")
 async def chat_endpoint(chat_req: ChatRequest):
     collection_name = vectorstore_service.get_collection_name(chat_req.user_id)
-    chain = vectorstore_service.get_conversation_chain(collection_name, chat_req.course_id)
+    chain = vectorstore_service.get_conversation_chain(collection_name, str(chat_req.course_id))
 
     try:
         result = chain({"question": chat_req.question})
