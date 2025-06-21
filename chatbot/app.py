@@ -5,25 +5,29 @@ import requests
 
 backend_url = "http://localhost:8000"
 
+def handle_submit():
+  user_question = st.session_state.user_question
+  if user_question:
+    handle_userinput(user_question)
+    # Clear the input after processing
+    st.session_state.user_question = ""
+
 def handle_userinput(user_question):
     payload = {
         "user_id": st.session_state.user_id,
         "course_id": st.session_state.course_id,
         "question": user_question
     }
+
     response = requests.post(f"{backend_url}/chat/query", json=payload)
 
     if response.status_code == 200:
-        data = response.json()
-        st.session_state.chat_history = data.get("chat_history", [])
-
-        for i, message in enumerate(st.session_state.chat_history):
-            if i % 2 == 0:
-                st.write(user_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
-            else:
-                st.write(bot_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
-    else:
-        st.error(f"Backend returned error: {response.status_code}")
+      data = response.json()
+      new_messages = data.get("chat_history", [])
+      if st.session_state.chat_history is None:
+          st.session_state.chat_history = new_messages
+      else:
+          st.session_state.chat_history.extend(new_messages)
 
 def handle_course_change(selected_course_name, course_id):
     st.session_state.selected_course = selected_course_name
@@ -56,9 +60,6 @@ def show_existing_files():
     for file_name in file_names:
       st.write(f"{file_name}")
     
-    for i, file_name in enumerate(sorted(file_names)):
-      st.write(f"{i+1}. {file_name}")
-    
     # If there are existing documents, set processed to True and create conversation chain
     st.session_state.processed = True
     if not st.session_state.conversation:
@@ -73,22 +74,20 @@ def show_existing_files():
     st.error("Error fetching files")
 
 def show_conversation():
-  # Initialize user_question in session state if it doesn't exist
-  if "user_question" not in st.session_state:
-      st.session_state.user_question = ""
-  
-  # Use the session state variable for the text input
-  user_question = st.text_input(
-      "Ask a question about your documents:",
-      value=st.session_state.user_question,
-      key="question_input"
-  )
-  
-  # Update session state with new question
-  st.session_state.user_question = user_question
-  
-  if user_question:
-      handle_userinput(user_question)
+    # Text input with automatic submit on Enter or focus loss
+    st.text_input(
+        "Ask a question about your documents:",
+        key="user_question",
+        on_change=handle_submit
+    )
+
+    # Display chat history
+    if st.session_state.chat_history:
+        for i, message in enumerate(st.session_state.chat_history):
+            if i % 2 == 0:
+                st.write(user_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
+            else:
+                st.write(bot_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
 
 def download_module(module_id):
   file_details_response = requests.get(f"{backend_url}/courses/items", params={

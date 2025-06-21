@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 # Example Pydantic model for request body
 class ChatRequest(BaseModel):
     user_id: str
-    course_id: str
+    course_id: int
     question: str
 
 @router.get("")
