@@ -7,6 +7,7 @@ from fastapi import Body, Query
 from typing import List, Dict
 from pydantic import BaseModel
 from io import BytesIO
+from services.redis_client import redis_client
 router = APIRouter()
 text_service = TextService()
 
@@ -18,6 +19,11 @@ class FileDetails(BaseModel):
 
 @router.get("")
 async def get_files(user_id, selected_course_id):
+
+    cache = redis_client.get(f"{user_id}-{selected_course_id}-files")
+    if cache is None or len(cache) == 0:
+        raise HTTPException(status_code=404, detail="No files found")
+
     collection = vectorstore_service.get_collection(user_id)
     existing_docs = collection.get()
     if existing_docs and existing_docs['metadatas']:

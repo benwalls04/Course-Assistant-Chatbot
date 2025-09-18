@@ -24,6 +24,7 @@ class VectorStoreService:
         print("[VectorStoreService] Failed to connect to ChromaDB:", e)
         raise e
 
+
   def get_collection(self, user_id):
       collection_name = self.get_collection_name(user_id)
       try:
@@ -34,9 +35,11 @@ class VectorStoreService:
           print(f"[VectorStoreService] Creating new collection: {collection_name}")
           return self.client.create_collection(name=collection_name)
 
+
   def get_collection_name(self, user_id):
     return f"user_{user_id}_collection"
   
+
   def get_conversation_chain(self, collection_name, course_id):  
     vectorstore = Chroma(
       client=self.client,
@@ -70,6 +73,7 @@ class VectorStoreService:
       memory=memory
     )
     return conversation_chain
+
 
   def store_docs(self, text_chunks, metadata):
     print(f"[store_docs] Attempting to store {len(text_chunks)} chunks...")

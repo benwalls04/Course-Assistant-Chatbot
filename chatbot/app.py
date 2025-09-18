@@ -116,18 +116,15 @@ def download_module(module_id):
 
 def main():
   load_dotenv()
-  #TODO: add auth
-  st.session_state.user_id = "user_1"
-  
-  courses = requests.get(f"{backend_url}/courses").json()
-  modules = requests.get(f"{backend_url}/courses/modules", params={
-    'course_id': courses[0]["id"]
-  })
 
   st.set_page_config(page_title="Course Assistant", page_icon=":books:")
   st.write(css, unsafe_allow_html=True)
 
   # Initialize session state variables
+  if "user_id" not in st.session_state:
+    st.session_state.user_id = "user1"
+  if "init" not in st.session_state:
+    st.session_state.init = False
   if "conversation" not in st.session_state:
     st.session_state.conversation = None
   if "chat_history" not in st.session_state:
@@ -139,33 +136,36 @@ def main():
   if "selected_course" not in st.session_state:
     st.session_state.selected_course = None
 
+  # get user_data
+  if not st.session_state.init:
+    user_data = requests.get(f"{backend_url}/init", params={
+      'user_id': st.session_state.user_id
+    }).json()
+    st.session_state.init = True
+    st.session_state.user_data = user_data
+
   st.header("Course Assistant")
 
   # Course selection
-  course_options = {course['name']: course['id'] for course in courses}
+  courses = {data["name"]: cid for cid, data in st.session_state.user_data.items()}
   selected_course_name = st.selectbox(
       "Select a course",
-      options=list(course_options.keys()),
-      index=0 if not st.session_state.selected_course else list(course_options.keys()).index(st.session_state.selected_course)
+      options=list(courses.keys()),
+      index=0 if not st.session_state.selected_course else list(courses.keys()).index(st.session_state.selected_course)
   )
 
   # Update session state when course changes
   if selected_course_name != st.session_state.selected_course:
-      handle_course_change(selected_course_name, course_options[selected_course_name])
-
-  # Module selection
-  modules_response = requests.get(f"{backend_url}/courses/modules", params={
-    'course_id': st.session_state.course_id
-  })
-  modules = modules_response.json()
+      handle_course_change(selected_course_name, courses[selected_course_name])
 
   with st.sidebar:
     st.subheader("Your documents")
     show_existing_files()
 
     st.subheader("Download a module")
-    module_names = ["No module selected"] + [module["name"] for module in modules]
-    selected_module = st.selectbox("Select a module:", options=module_names, index=0 if module_names else None)
+    modules = {mdata["name"] : mid for mid, mdata in st.session_state.user_data[st.session_state.course_id]["modules"].items()}
+    module_list = ["No module selected"] + list(modules.keys())
+    selected_module = st.selectbox("Select a module:", options=list(modules.keys()), index=0 if modules else None)
     
     #uploaded_docs = st.file_uploader("Or upload your PDFs here and click on 'Process'", accept_multiple_files=True)
     
@@ -173,7 +173,7 @@ def main():
       with st.spinner("Processing"): 
 
         if selected_module != "No module selected":
-          module_id = next(module["id"] for module in modules if module["name"] == selected_module)
+          module_id = modules[selected_module]
           download_module(module_id)
 
         # Ingest uploaded files 

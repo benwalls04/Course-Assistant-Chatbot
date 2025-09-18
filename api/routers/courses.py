@@ -4,9 +4,8 @@ from services.canvas import CanvasService
 router = APIRouter()
 canvas_service = CanvasService()
 
-@router.get("")
-def get_courses():
 
+def fetch_courses():
   response = canvas_service.get_courses()
 
   courses = []
@@ -19,9 +18,8 @@ def get_courses():
 
   return courses
 
-@router.get("/modules")
-def get_modules(course_id):
 
+def fetch_modules(course_id):
   response = canvas_service.get_modules(course_id)
   modules = []
 
@@ -32,6 +30,19 @@ def get_modules(course_id):
     })
 
   return modules
+
+
+@router.get("")
+def get_courses():
+
+  return fetch_courses()
+
+
+@router.get("/modules")
+def get_modules(course_id):
+
+  return fetch_modules(course_id)
+
 
 @router.get("/items")
 def get_module_items(course_id, module_id):
