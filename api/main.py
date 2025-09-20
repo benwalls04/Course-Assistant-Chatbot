@@ -15,12 +15,12 @@ app.include_router(auth.router, prefix="/auth")
 
 @app.get("/init")
 async def init(user_id: str):
-  cache_data = {}
+  user_data = {}
 
   all_courses = courses.fetch_courses()
   for c in all_courses:
     cid = c["id"]
-    cache_data[cid] = {
+    user_data[cid] = {
       "name": c["name"]
     }
     
@@ -32,11 +32,9 @@ async def init(user_id: str):
         "files": None
       }
 
-    cache_data[cid]["modules"] = modules_obj
+    user_data[cid]["modules"] = modules_obj
 
-    redis_client.setex(f"{user_id}-{cid}-files", 3600, json.dumps(None))
-    redis_client.setex(f"{user_id}-{cid}-chat", 3600, json.dumps(None))
       
-  return cache_data
+  return user_data
 
 handler = Mangum(app)

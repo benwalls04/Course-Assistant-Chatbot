@@ -50,12 +50,11 @@ def get_module_items(course_id, module_id):
     response = canvas_service.get_module_items(course_id, module_id)
     
     if response.status_code == 200:
-        # Filter for only file items
         items = response.json()
         file_items = [item for item in items if item.get('type') == 'File']
         
         if not file_items:
-            return f"No files found in module {module_id}"
+            return []
             
         # Get file details for each file item
         file_details = []
@@ -65,11 +64,6 @@ def get_module_items(course_id, module_id):
                 file_details.append(res)
         
         return file_details
-                
-    elif response.status_code == 404:
-        return f"Module not found. Please check if the module ID {module_id} is correct."
-    elif response.status_code == 401:
-        return "Authentication failed. Please check your API key."
     else:
-        return f"Error fetching module items: {response.status_code}"
+        raise HTTPException(status_code=404, detail= f"Error fetching module items")
 

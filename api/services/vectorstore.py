@@ -6,8 +6,11 @@ from langchain_community.vectorstores import Chroma
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain_openai import ChatOpenAI
+from langchain.schema import HumanMessage, AIMessage
 from dotenv import load_dotenv
 from chromadb.config import Settings
+from services.redis_client import redis_client
+import os
 
 class VectorStoreService:
   def __init__(self):
@@ -15,15 +18,8 @@ class VectorStoreService:
 
     # Set up embedding model once
     self.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-    # Create only ONE ChromaDB PersistentClient instance
-    try:
-        self.client = chromadb.PersistentClient(path="chroma_db")
-        print("[VectorStoreService] Connected to ChromaDB at path: chroma_db")
-    except Exception as e:
-        print("[VectorStoreService] Failed to connect to ChromaDB:", e)
-        raise e
-
+    self.client = chromadb.PersistentClient(path="chroma_db")
+    self.llm = ChatOpenAI(temperature=0.5, model_name="gpt-3.5-turbo")
 
   def get_collection(self, user_id):
       collection_name = self.get_collection_name(user_id)
@@ -37,10 +33,11 @@ class VectorStoreService:
 
 
   def get_collection_name(self, user_id):
-    return f"user_{user_id}_collection"
-  
+    return f"{user_id}_collection"
 
-  def get_conversation_chain(self, collection_name, course_id):  
+  def get_conversation_chain(self, user_id, course_id):
+    collection_name = self.get_collection_name(user_id)
+      
     vectorstore = Chroma(
       client=self.client,
       collection_name=collection_name,
@@ -48,11 +45,10 @@ class VectorStoreService:
       persist_directory="chroma_db"
     )
 
-    llm = ChatOpenAI(
-      temperature=0.5,
-      model_name="gpt-3.5-turbo"  
+    memory = ConversationBufferMemory(
+      memory_key="chat_history", 
+      return_messages=True
     )
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
     retriever = vectorstore.as_retriever(
       search_kwargs={
@@ -62,16 +58,22 @@ class VectorStoreService:
       }
     )
 
-    docs = retriever.get_relevant_documents("test query for debugging")
-    print(f"[Debug] Number of documents retrieved with filter course_id={str(course_id)}: {len(docs)}")
-    for i, doc in enumerate(docs):
-        print(f"Doc {i}: metadata={doc.metadata}")
-
     conversation_chain = ConversationalRetrievalChain.from_llm( 
-      llm=llm,
+      llm=self.llm,
       retriever=retriever,
       memory=memory
     )
+
+    key = f"{user_id}-{course_id}-chat"
+    msgs = redis_client.lrange(key, 0, -1)
+    print(msgs)
+    for i, msg in enumerate(msgs):
+      print(msg)
+      if i % 2 == 0:
+        memory.chat_memory.add_message(AIMessage(content=msg))
+      else:
+        memory.chat_memory.add_message(HumanMessage(content=msg))
+
     return conversation_chain
 
 

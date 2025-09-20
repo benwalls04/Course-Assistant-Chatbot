@@ -23,11 +23,8 @@ def handle_userinput(user_question):
 
     if response.status_code == 200:
       data = response.json()
-      new_messages = data.get("chat_history", [])
-      if st.session_state.chat_history is None:
-          st.session_state.chat_history = new_messages
-      else:
-          st.session_state.chat_history.extend(new_messages)
+      chat_history = data.get("chat_history", [])
+      st.session_state.chat_history = chat_history
 
 def handle_course_change(selected_course_name, course_id):
     st.session_state.selected_course = selected_course_name
@@ -41,10 +38,10 @@ def handle_course_change(selected_course_name, course_id):
     if st.session_state.processed:
         response = requests.get(f"{backend_url}/chat", params={
             'user_id': st.session_state.user_id,
-            'course_id': course_id
+            'course_id': course_id,
         })
         if response.status_code == 200:
-            st.session_state.conversation = response.json()
+            st.session_state.chat_history = response.json()
         else:
             st.error("Failed to get conversation chain")
 
@@ -63,13 +60,6 @@ def show_existing_files():
     else:
        st.write("No documents found")
     
-    # If there are existing documents, set processed to True and create conversation chain
-    st.session_state.processed = True
-    if not st.session_state.conversation:
-      st.session_state.conversation = requests.get(f"{backend_url}/chat", params={
-        'user_id': st.session_state.user_id,
-        'course_id': st.session_state.course_id
-      })
 
   elif response.status_code == 404:
     st.write("No documents found for this course")
@@ -77,6 +67,11 @@ def show_existing_files():
     st.error("Error fetching files")
 
 def show_conversation():
+    st.session_state.chat_history = requests.get(f"{backend_url}/chat", params={
+        'user_id': st.session_state.user_id,
+        'course_id': st.session_state.course_id
+      }).json()
+
     # Text input with automatic submit on Enter or focus loss
     st.text_input(
         "Ask a question about your documents:",
@@ -85,34 +80,37 @@ def show_conversation():
     )
 
     # Display chat history
-    if st.session_state.chat_history:
-        for i, message in enumerate(st.session_state.chat_history):
+    if st.session_state.chat_history and len(st.session_state.chat_history) > 0:
+        for i, message in enumerate(st.session_state.chat_history[::-1]):
             if i % 2 == 0:
-                st.write(user_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
-            else:
                 st.write(bot_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
+            else:
+                st.write(user_template.replace("{{MSG}}", message['content']), unsafe_allow_html=True)
 
 def download_module(module_id):
-  file_details_response = requests.get(f"{backend_url}/courses/items", params={
+  response = requests.get(f"{backend_url}/courses/items", params={
     'course_id': st.session_state.course_id,
     'module_id': module_id
   })
-
-  file_details = file_details_response.json()
   
-  if file_details:
-    st.write("Found files:")
-    for file in file_details:
-        st.write(f"- {file['name']} ({file['content_type']})")
-    
-    # Ingest canvas files first
-    requests.post(f"{backend_url}/files/ingest_canvas_files",
-    params={
-        'user_id': st.session_state.user_id,
-        'course_id': st.session_state.course_id
-    },
-    json=file_details 
-    )
+  if response.status_code == 200:
+    file_details = response.json()
+
+    if len(file_details) > 0: 
+      st.write("Found files:")
+      for file in file_details:
+          st.write(f"- {file['name']} ({file['content_type']})")
+      
+      # Ingest canvas files first
+      requests.post(f"{backend_url}/files/ingest_canvas_files",
+      params={
+          'user_id': st.session_state.user_id,
+          'course_id': st.session_state.course_id
+      },
+      json=file_details 
+      )
+    else:
+      st.write("No downloadable files found in this module")
 
 def main():
   load_dotenv()
@@ -125,10 +123,8 @@ def main():
     st.session_state.user_id = "user1"
   if "init" not in st.session_state:
     st.session_state.init = False
-  if "conversation" not in st.session_state:
-    st.session_state.conversation = None
   if "chat_history" not in st.session_state:
-    st.session_state.chat_history = None
+    st.session_state.chat_history = []
   if "processed" not in st.session_state:
     st.session_state.processed = False
   if "course_id" not in st.session_state:
@@ -184,19 +180,13 @@ def main():
         #     'selected_course_id': st.session_state.course_id
         #   })
     
-        # create conversation chain
-        st.session_state.conversation = requests.get(f"{backend_url}/chat", params={
-          'user_id': st.session_state.user_id,
-          'course_id': st.session_state.course_id
-        })
         st.session_state.processed = True
-        st.success("Documents processed successfully!")
 
   # Always create a new conversation chain when the page loads
-  if st.session_state.processed:
-    show_conversation()
-  else:
+  if not st.session_state.processed:
     st.info("Please download some documents first!")
+
+  show_conversation()
 
 if __name__ == '__main__':
   main()
